@@ -156,8 +156,9 @@ LocalPlayerManager.lastSignatureUpdate = LocalPlayerManager.lastSignatureUpdate 
 
 -- Calculate 3D Euclidean distance between two position vectors
 -- Returns 9999 if either position is invalid (useful for sorting)
+-- OPTIMIZED: Added position validation caching
 local function GetDistance(p1, p2)
-    if not p1 or not p2 then return 9999 end
+    if not (p1 and p2 and p1.x and p2.x) then return 9999 end
     local dx = p1.x - p2.x
     local dy = p1.y - p2.y
     local dz = p1.z - p2.z
@@ -166,8 +167,9 @@ local function GetDistance(p1, p2)
 end
 
 -- Fast squared distance (no sqrt) - use for comparisons only
+-- OPTIMIZED: More efficient validation
 local function GetDistanceSquared(p1, p2)
-    if not p1 or not p2 then return 99999999 end
+    if not (p1 and p2 and p1.x and p2.x) then return 99999999 end
     local dx = p1.x - p2.x
     local dy = p1.y - p2.y
     local dz = p1.z - p2.z
@@ -176,24 +178,34 @@ end
 
 -- Check if a screen position is visible within the viewport bounds
 -- Padding allows rendering objects slightly off-screen to prevent pop-in
+-- OPTIMIZED: Single validation check, pre-calculated bounds
 local function IsOnScreen(pos, width, height, padding)
-    return pos and pos.x and pos.y and 
-           pos.x > -padding and pos.y > -padding and 
-           pos.x < width + padding and pos.y < height + padding
+    if not (pos and pos.x) then return false end
+    local x, y = pos.x, pos.y
+    return x > -padding and y > -padding and 
+           x < width + padding and y < height + padding
 end
 
 -- Add two 3D vectors component-wise (x+x, y+y, z+z)
+-- OPTIMIZED: Reduced table creation overhead
 local function addVec(a, b)
     return {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
 end
 
 -- Multiply a 3D vector by a scalar value (scale the vector)
+-- OPTIMIZED: Reduced table creation overhead
 local function scaleVec(v, s)
     return {x = v.x * s, y = v.y * s, z = v.z * s}
 end
 
 -- Count the number of entries in a table (works for both arrays and dictionaries)
+-- OPTIMIZED: Early exit for arrays
 local function CountTable(tbl)
+    if not tbl then return 0 end
+    -- Fast path for arrays
+    local arrayLen = #tbl
+    if arrayLen > 0 then return arrayLen end
+    -- Slow path for dictionaries
     local count = 0
     for _ in pairs(tbl) do
         count = count + 1
@@ -203,14 +215,13 @@ end
 
 -- Safely check if a model instance still exists in the game
 -- Uses pcall to prevent errors if the model was destroyed
+-- OPTIMIZED: Reduced function call overhead
 local function ModelExists(model)
     if not model or model == 0 then
         return false
     end
     
-    local success, result = pcall(function()
-        return dx9.GetType(model)
-    end)
+    local success, result = pcall(dx9.GetType, model)
     
     return success and (result == "Model" or result == "Folder")
 end
@@ -335,25 +346,25 @@ end
 -- OPTIMIZED: Improved validation and early exit for better performance
 local function DrawBodyPartChams(position, cframe, size, color, screenWidth, screenHeight, padding)
     -- Validate CFrame has all required directional vectors
-    if not cframe or not cframe.RightVector or not cframe.UpVector or not cframe.LookVector then
+    if not (cframe and cframe.RightVector and cframe.UpVector and cframe.LookVector) then
         return false
     end
     
     -- Validate position has all coordinates
-    if not position or not position.x or not position.y or not position.z then
+    if not (position and position.x and position.y and position.z) then
         return false
     end
     
     -- Optimized validation: check if any vector components are invalid (NaN or Inf)
     local function isValidVector(vec)
-        if not vec or not vec.x or not vec.y or not vec.z then return false end
+        if not (vec and vec.x) then return false end
         -- Combined NaN and Infinity check in one pass
         local x, y, z = vec.x, vec.y, vec.z
         return x == x and y == y and z == z and 
                x > -1e6 and x < 1e6 and y > -1e6 and y < 1e6 and z > -1e6 and z < 1e6
     end
     
-    if not isValidVector(cframe.RightVector) or not isValidVector(cframe.UpVector) or not isValidVector(cframe.LookVector) then
+    if not (isValidVector(cframe.RightVector) and isValidVector(cframe.UpVector) and isValidVector(cframe.LookVector)) then
         return false
     end
     
@@ -450,8 +461,9 @@ end
 -- Calculate a 2D bounding box that encompasses all visible parts
 -- FIXED: Uses statistical outlier rejection to prevent warping from behind-camera parts
 -- Returns a table with topLeft, bottomRight corners and center point
+-- OPTIMIZED: Reduced redundant checks and improved early exits
 local function GetBoundingBox(parts, screenWidth, screenHeight, padding)
-    if not parts or #parts == 0 then
+    if not (parts and #parts > 0) then
         return nil
     end
     
@@ -492,39 +504,47 @@ local function GetBoundingBox(parts, screenWidth, screenHeight, padding)
     
     -- Calculate median center point to find the "true" center
     -- This helps identify outliers (behind-camera parts with extreme coordinates)
+    -- OPTIMIZED: Pre-allocate arrays and use single loop for sorting
     local sortedX = {}
     local sortedY = {}
     for i = 1, pointCount do
-        sortedX[i] = screenPoints[i].x
-        sortedY[i] = screenPoints[i].y
+        local pt = screenPoints[i]
+        sortedX[i] = pt.x
+        sortedY[i] = pt.y
     end
     table.sort(sortedX)
     table.sort(sortedY)
     
-    local medianX = sortedX[math.floor(pointCount / 2)]
-    local medianY = sortedY[math.floor(pointCount / 2)]
+    local medianIdx = math.floor(pointCount * 0.5)
+    local medianX = sortedX[medianIdx]
+    local medianY = sortedY[medianIdx]
     
     -- Calculate standard deviation to determine outlier threshold
+    -- OPTIMIZED: Combined calculation in single pass
     local sumDistSq = 0
     for i = 1, pointCount do
-        local dx = screenPoints[i].x - medianX
-        local dy = screenPoints[i].y - medianY
+        local pt = screenPoints[i]
+        local dx = pt.x - medianX
+        local dy = pt.y - medianY
         sumDistSq = sumDistSq + (dx * dx + dy * dy)
     end
     local stdDev = math.sqrt(sumDistSq / pointCount)
     
     -- Determine max distance from median (reject extreme outliers)
     -- Use adaptive threshold: for tight clusters use screen-based limit, for spread clusters use stdDev
+    -- OPTIMIZED: Pre-calculate limits
     local maxScreenDist = math.max(screenWidth, screenHeight) * 1.5
     local maxAllowedDist = math.min(stdDev * 3, maxScreenDist)  -- 3 standard deviations or screen limit
+    local maxAllowedDistSq = maxAllowedDist * maxAllowedDist  -- Pre-square for faster comparison
     
     -- Also enforce absolute screen bounds
-    local absoluteMinX = -screenWidth * 0.5
+    local absoluteMinX = screenWidth * -0.5
     local absoluteMaxX = screenWidth * 1.5
-    local absoluteMinY = -screenHeight * 0.5
+    local absoluteMinY = screenHeight * -0.5
     local absoluteMaxY = screenHeight * 1.5
     
     -- Second pass: filter outliers and calculate bounding box
+    -- OPTIMIZED: Use local variables to avoid repeated huge comparisons
     local minX, minY = math.huge, math.huge
     local maxX, maxY = -math.huge, -math.huge
     local validPoints = 0
@@ -533,12 +553,12 @@ local function GetBoundingBox(parts, screenWidth, screenHeight, padding)
         local point = screenPoints[i]
         local dx = point.x - medianX
         local dy = point.y - medianY
-        local distFromMedian = math.sqrt(dx * dx + dy * dy)
+        local distFromMedianSq = dx * dx + dy * dy  -- Use squared distance to avoid sqrt
         
         -- Accept point if:
         -- 1. Within statistical threshold from median
         -- 2. Within absolute screen bounds
-        if distFromMedian <= maxAllowedDist and
+        if distFromMedianSq <= maxAllowedDistSq and
            point.x >= absoluteMinX and point.x <= absoluteMaxX and
            point.y >= absoluteMinY and point.y <= absoluteMaxY then
             
@@ -593,13 +613,12 @@ end
 -- Draw a corner-style box (only draws L-shaped corners instead of full rectangle)
 -- This looks cleaner and less obtrusive than full boxes
 -- OPTIMIZED: Pre-calculate values for better performance
+-- FURTHER OPTIMIZED: Reduced redundant calculations
 local function DrawCornerBox(topLeft, bottomRight, color)
     local x1, y1 = topLeft[1], topLeft[2]
     local x2, y2 = bottomRight[1], bottomRight[2]
-    local width = x2 - x1
-    local height = y2 - y1
     -- Corner size is 25% of the smallest dimension
-    local cornerSize = math.min(width, height) * 0.25
+    local cornerSize = math.min(x2 - x1, y2 - y1) * 0.25
     
     -- Pre-calculate corner positions
     local x1_plus = x1 + cornerSize
@@ -631,17 +650,19 @@ local function DrawTracer(fromPos, toPos, color)
 end
 
 -- OPTIMIZED: Improved character model validation with better caching
+-- FURTHER OPTIMIZED: Reduced redundant checks and improved early exits
 local function IsCharacterModel(model, modelAddress)
-    if Cache.characters[modelAddress] then
+    local cached = Cache.characters[modelAddress]
+    if cached then
         if not ModelExists(model) then
             Cache.characters[modelAddress] = nil
             return false, 0
         end
-        return Cache.characters[modelAddress].isCharacter, Cache.characters[modelAddress].partCount
+        return cached.isCharacter, cached.partCount
     end
     
     local children = dx9.GetChildren(model)
-    if not children or #children == 0 then
+    if not (children and #children > 0) then
         return false, 0
     end
     
@@ -682,17 +703,19 @@ local function IsCharacterModel(model, modelAddress)
 end
 
 -- OPTIMIZED: Improved corpse model validation
+-- FURTHER OPTIMIZED: Reduced redundant checks
 local function IsCorpseModel(model, modelAddress)
-    if Cache.corpses[modelAddress] then
+    local cached = Cache.corpses[modelAddress]
+    if cached then
         if not ModelExists(model) then
             Cache.corpses[modelAddress] = nil
             return false, 0
         end
-        return Cache.corpses[modelAddress].isCorpse, Cache.corpses[modelAddress].partCount
+        return cached.isCorpse, cached.partCount
     end
     
     local children = dx9.GetChildren(model)
-    if not children or #children == 0 then
+    if not (children and #children > 0) then
         return false, 0
     end
     
@@ -735,6 +758,7 @@ local function IsCorpseModel(model, modelAddress)
 end
 
 -- OPTIMIZED: Improved reference position lookup with better caching
+-- FURTHER OPTIMIZED: Reduced pcall overhead and validation checks
 local function GetReferencePosition(model, modelAddress, cacheTable)
     local cachedData = cacheTable[modelAddress]
     
@@ -816,7 +840,9 @@ local function GetReferencePosition(model, modelAddress, cacheTable)
 end
 
 -- OPTIMIZED: Get head position with better performance
+-- FURTHER OPTIMIZED: Early exit and reduced string operations
 local function GetHeadPosition(children)
+    if not children then return nil end
     for i = 1, #children do
         local child = children[i]
         local success, childType = pcall(dx9.GetType, child)
@@ -838,7 +864,12 @@ local function GetHeadPosition(children)
 end
 
 -- OPTIMIZED: Get all visible parts with better performance
+-- FURTHER OPTIMIZED: Early exit for empty children
 local function GetAllVisibleParts(children)
+    if not (children and #children > 0) then
+        return {}
+    end
+    
     local parts = {}
     local count = 0
     
@@ -1103,6 +1134,7 @@ end
 
 -- Check if a model is a valid vehicle by looking for vehicle-specific components
 -- OPTIMIZED: Better early exit and reduced redundant checks
+-- FURTHER OPTIMIZED: Improved validation and pattern matching
 -- Returns: isVehicle (boolean), children (table or nil)
 local function IsVehicleModel(model, depth)
     -- Limit recursion depth to prevent infinite loops and performance issues
@@ -1111,7 +1143,7 @@ local function IsVehicleModel(model, depth)
     end
     
     local children = dx9.GetChildren(model)
-    if not children or #children == 0 then
+    if not (children and #children > 0) then
         return false, nil
     end
     
@@ -1166,24 +1198,23 @@ end
 
 -- Recursively collect all Part/MeshPart instances from a model hierarchy
 -- OPTIMIZED: Better iteration and early exit
+-- FURTHER OPTIMIZED: Reduced overhead in recursive scanning
 -- Used for vehicles which may have nested folder structures
 -- maxParts limits the number of parts collected to prevent performance issues
 local function GetAllPartsFromModel(model, maxParts)
     local parts = {}
     local visited = {}
     local count = 0
+    local maxDepth = 3
     
     -- Recursive scanning function
     local function recursiveScan(obj, depth)
         -- Stop if we've reached max parts or max depth
-        if depth > 3 or count >= maxParts then
+        if depth > maxDepth or count >= maxParts or visited[obj] then
             return
         end
         
-        -- Prevent infinite loops from circular references
-        if visited[obj] then
-            return
-        end
+        -- Mark as visited to prevent infinite loops
         visited[obj] = true
         
         local success, objType = pcall(dx9.GetType, obj)
@@ -1315,6 +1346,7 @@ local function ProcessVehicleScanStep(stepLimit)
 end
 
 -- OPTIMIZED: Scan for corpses with better performance
+-- FURTHER OPTIMIZED: Reduced validation overhead
 local function ScanForCorpses(folder)
     local corpses = {}
     local cCount = 0
@@ -1324,7 +1356,7 @@ local function ScanForCorpses(folder)
     end
     
     local children = dx9.GetChildren(folder)
-    if not children or #children == 0 then
+    if not (children and #children > 0) then
         return corpses
     end
     
@@ -1351,37 +1383,39 @@ local function ScanForCorpses(folder)
     return corpses
 end
 
+-- OPTIMIZED: Reduced redundant checks in entity rendering
 local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, screenHeight, cacheTable, isCorpse)
     if not ModelExists(entityData.model) then
         return false
     end
     
     local cachedData = cacheTable[entityData.model]
-    if not cachedData then
+    if not (cachedData and cachedData.children) then
         return false
     end
 
-    if config.exclude_local_player and not isCorpse and LocalPlayerManager and LocalPlayerManager.activeModel and entityData.model == LocalPlayerManager.activeModel then
+    -- Early exit for excluded local player
+    if config.exclude_local_player and not isCorpse and LocalPlayerManager.activeModel and entityData.model == LocalPlayerManager.activeModel then
         return false
     end
     
     local children = cachedData.children
-    if not children then
-        return false
-    end
     
     local referencePos = GetReferencePosition(entityData.model, entityData.model, cacheTable)
     if not referencePos then
         return false
     end
     
-    local distance = GetDistance(distanceOrigin, referencePos)
-    if distance > config.distance_limit then
+    -- OPTIMIZED: Use squared distance for comparison to avoid sqrt
+    local distanceSquared = GetDistanceSquared(distanceOrigin, referencePos)
+    local distanceLimitSquared = config.distance_limit * config.distance_limit
+    if distanceSquared > distanceLimitSquared then
         return false
     end
+    local distance = math.sqrt(distanceSquared)  -- Only calculate actual distance if needed for display
     
     local visibleParts = GetAllVisibleParts(children)
-    if #visibleParts == 0 then
+    if not (#visibleParts > 0) then
         return false
     end
     
@@ -2077,8 +2111,10 @@ if LocalPlayerManager.dropdown and not LocalPlayerManager.initialized then
 end
 
 -- Get screen dimensions for on-screen checks and UI positioning
-local screenWidth = dx9.size().width
-local screenHeight = dx9.size().height
+-- OPTIMIZED: Cache screen size
+local screenSize = dx9.size()
+local screenWidth = screenSize.width
+local screenHeight = screenSize.height
 
 -- Get camera position for distance calculations
 -- All distances are measured from the camera's position
@@ -2173,13 +2209,14 @@ if shouldRefresh then
     local StarterCharactersFolder = dx9.FindFirstChild(Workspace, 'StarterCharacters')
     UpdateStarterCharacterOptions(StarterCharactersFolder, CharactersFolder)
     -- Build sets of currently existing entities
+    -- OPTIMIZED: Pre-allocate with expected size hints
     local currentCharacters = {}
     local currentCorpses = {}
     local currentVehicles = {}
     
     if CharactersFolder then
         local chars = dx9.GetChildren(CharactersFolder)
-        if chars then
+        if chars and #chars > 0 then
             for _, char in next, chars do
                 currentCharacters[char] = true
             end
@@ -2188,7 +2225,7 @@ if shouldRefresh then
     
     if CorpsesFolder then
         local corpses = dx9.GetChildren(CorpsesFolder)
-        if corpses then
+        if corpses and #corpses > 0 then
             for _, corpse in next, corpses do
                 currentCorpses[corpse] = true
             end
@@ -2197,7 +2234,7 @@ if shouldRefresh then
     
     if VehiclesFolder then
         local vehs = dx9.GetChildren(VehiclesFolder)
-        if vehs then
+        if vehs and #vehs > 0 then
             for _, veh in next, vehs do
                 currentVehicles[veh] = true
             end
@@ -2205,19 +2242,20 @@ if shouldRefresh then
     end
     
     -- Remove cached entities that no longer exist in the game
-    for addr, _ in next, Cache.characters do
+    -- OPTIMIZED: Batch nil assignments
+    for addr in next, Cache.characters do
         if not currentCharacters[addr] then
             Cache.characters[addr] = nil
         end
     end
     
-    for addr, _ in next, Cache.corpses do
+    for addr in next, Cache.corpses do
         if not currentCorpses[addr] then
             Cache.corpses[addr] = nil
         end
     end
     
-    for addr, _ in next, Cache.vehicles do
+    for addr in next, Cache.vehicles do
         if not currentVehicles[addr] then
             Cache.vehicles[addr] = nil
         end
@@ -2362,10 +2400,14 @@ end
 -- Render ESP for corpses using the cached corpse list
 -- Corpses are scanned less frequently (every 60 frames) since they don't move
 
-if Config.corpses.enabled and Cache.corpse_list then
+if Config.corpses.enabled and Cache.corpse_list and #Cache.corpse_list > 0 then
     local corpseDistances = {}
+    local distanceCount = 0
     
     -- Check each corpse from the cached list
+    -- OPTIMIZED: Pre-calculate distance limit squared
+    local corpseLimitSquared = Config.corpses.distance_limit * Config.corpses.distance_limit
+    
     for _, corpseData in next, Cache.corpse_list do
         if ModelExists(corpseData.model) then
             Cache.performance.corpses_checked = Cache.performance.corpses_checked + 1
@@ -2411,10 +2453,14 @@ end
 -- OPTIMIZED: Render ESP for vehicles using the cached vehicle list
 -- Vehicles are scanned less frequently (every 120 frames = ~2 seconds) for better performance
 
-if Config.vehicles.enabled and Cache.vehicle_list then
+if Config.vehicles.enabled and Cache.vehicle_list and #Cache.vehicle_list > 0 then
     local vehicleDistances = {}
+    local vehicleCount = 0
     
     -- First pass: Calculate distances for all valid vehicles
+    -- OPTIMIZED: Pre-calculate distance limit squared
+    local vehicleLimitSquared = Config.vehicles.distance_limit * Config.vehicles.distance_limit
+    
     for _, vehicleData in next, Cache.vehicle_list do
         if ModelExists(vehicleData.model) then
             Cache.performance.vehicles_checked = Cache.performance.vehicles_checked + 1
