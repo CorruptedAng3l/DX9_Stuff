@@ -30,7 +30,7 @@ Config = _G.Config or {
         distance = true, -- Display distance to character in meters
         health = true, -- Display current/max health values
         color = {255, 100, 100}, -- RGB color for character ESP (red by default)
-        distance_limit = 100000, -- Maximum distance to render characters (100,000 studs covers entire map)
+    distance_limit = 1500, -- Maximum distance to render characters (default clamped to 50,000 studs)
         min_limb_count = 3, -- Minimum body parts required to detect as valid character
         box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
         tracer_origin = "Mouse", -- Where tracers start from: "Top", "Bottom", or "Mouse"
@@ -47,7 +47,7 @@ Config = _G.Config or {
         distance = true, -- Display distance to corpse in meters
         health = false, -- Health display disabled for corpses (they're dead)
         color = {255, 255, 100}, -- RGB color for corpse ESP (yellow by default)
-        distance_limit = 100000, -- Maximum distance to render corpses (100,000 studs covers entire map)
+    distance_limit = 1500, -- Maximum distance to render corpses (default clamped to 50,000 studs)
         min_limb_count = 3, -- Minimum body parts required to detect as valid corpse
         box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
         tracer_origin = "Mouse", -- Where tracers start from: "Top", "Bottom", or "Mouse"
@@ -61,7 +61,7 @@ Config = _G.Config or {
         names = true, -- Display vehicle name at location
         distance = true, -- Display distance to vehicle in meters
         color = {100, 255, 255}, -- RGB color for vehicle ESP (cyan by default)
-        distance_limit = 100000, -- Maximum distance to render vehicles (100,000 studs covers entire map)
+    distance_limit = 1500, -- Maximum distance to render vehicles (default clamped to 50,000 studs)
         icon_size = 6, -- Size in pixels of the small box icon drawn at vehicle position (reduced from 10)
         box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
         tracer_origin = "Top", -- Where tracers start from: "Top", "Bottom", or "Mouse"
@@ -94,6 +94,21 @@ if Config.characters.exclude_local_player == nil then
     Config.characters.exclude_local_player = false
 end
 Config.settings.vehicle_scan_step = Config.settings.vehicle_scan_step or 40
+
+local function clampDistanceLimit(value)
+    local numeric = tonumber(value) or 1500
+    if numeric < 0 then
+        numeric = 0
+    end
+    if numeric > 50000 then
+        numeric = 1500
+    end
+    return numeric
+end
+
+Config.characters.distance_limit = clampDistanceLimit(Config.characters.distance_limit)
+Config.corpses.distance_limit = clampDistanceLimit(Config.corpses.distance_limit)
+Config.vehicles.distance_limit = clampDistanceLimit(Config.vehicles.distance_limit)
 
 -- ====================================
 -- GLOBAL CACHE
@@ -1678,11 +1693,11 @@ end)
 CharGroupboxes.visual:AddSlider({
     Default = Config.characters.distance_limit,
     Text = "Max Distance",
-    Min = 50,
-    Max = 100000,
+    Min = 0,
+    Max = 50000,
     Rounding = 0,
 }):OnChanged(function(value)
-    Config.characters.distance_limit = value
+    Config.characters.distance_limit = clampDistanceLimit(value)
 end)
 
 CharGroupboxes.visual:AddSlider({
@@ -1784,11 +1799,11 @@ end)
 CorpseGroupboxes.visual:AddSlider({
     Default = Config.corpses.distance_limit,
     Text = "Max Distance",
-    Min = 50,
-    Max = 100000,
+    Min = 0,
+    Max = 50000,
     Rounding = 0,
 }):OnChanged(function(value)
-    Config.corpses.distance_limit = value
+    Config.corpses.distance_limit = clampDistanceLimit(value)
 end)
 
 CorpseGroupboxes.visual:AddSlider({
@@ -1883,11 +1898,11 @@ end)
 VehicleGroupboxes.visual:AddSlider({
     Default = Config.vehicles.distance_limit,
     Text = "Max Distance",
-    Min = 100,
-    Max = 100000,
+    Min = 0,
+    Max = 50000,
     Rounding = 0,
 }):OnChanged(function(value)
-    Config.vehicles.distance_limit = value
+    Config.vehicles.distance_limit = clampDistanceLimit(value)
 end)
 
 VehicleGroupboxes.visual:AddSlider({
