@@ -23,16 +23,16 @@ Config = _G.Config or {
     characters = {
         enabled = true, -- Master toggle for character ESP
         chams = true, -- Draw 3D wireframe boxes around character limbs
+        chams_body_only = true, -- Limit chams to core character body parts (skip equipment)
         boxes = false, -- Draw 2D/corner boxes around entire character
         tracers = false, -- Draw lines from screen position to character
         head_dot = false, -- Draw small circle at character's head position
-        names = true, -- Display character name above head
-        distance = true, -- Display distance to character in meters
-        health = true, -- Display current/max health values
-        color = {255, 100, 100}, -- RGB color for character ESP (red by default)
-        distance_limit = 100000, -- Maximum distance to render characters (100,000 studs covers entire map)
+    names = true, -- Display character name above head
+    distance = true, -- Display distance to character in meters
+    color = {255, 100, 100}, -- RGB color for character ESP (red by default)
+        distance_limit = 2000, -- Maximum distance to render characters by default
         min_limb_count = 3, -- Minimum body parts required to detect as valid character
-        box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
+    box_type = "Full Box", -- Type of box to draw: "Full Box" or "Corner Box"
         tracer_origin = "Mouse", -- Where tracers start from: "Top", "Bottom", or "Mouse"
         toggle_key = "[F3]", -- Hotkey to toggle character ESP without opening the UI
         exclude_local_player = false, -- Hide ESP for the selected local player model
@@ -44,12 +44,11 @@ Config = _G.Config or {
         tracers = false, -- Draw lines from screen position to corpse
         head_dot = false, -- Draw small circle at corpse's head position
         names = true, -- Display corpse name above body
-        distance = true, -- Display distance to corpse in meters
-        health = false, -- Health display disabled for corpses (they're dead)
-        color = {255, 255, 100}, -- RGB color for corpse ESP (yellow by default)
-        distance_limit = 100000, -- Maximum distance to render corpses (100,000 studs covers entire map)
+    distance = true, -- Display distance to corpse in meters
+    color = {255, 255, 100}, -- RGB color for corpse ESP (yellow by default)
+        distance_limit = 2000, -- Default maximum distance to render corpses
         min_limb_count = 3, -- Minimum body parts required to detect as valid corpse
-        box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
+    box_type = "Full Box", -- Type of box to draw: "Full Box" or "Corner Box"
         tracer_origin = "Mouse", -- Where tracers start from: "Top", "Bottom", or "Mouse"
         toggle_key = "[F4]", -- Hotkey to toggle corpse ESP without opening the UI
     },
@@ -59,11 +58,11 @@ Config = _G.Config or {
         boxes = false, -- Draw 2D/corner boxes around entire vehicle
         tracers = false, -- Draw lines from screen position to vehicle
         names = true, -- Display vehicle name at location
-        distance = true, -- Display distance to vehicle in meters
-        color = {100, 255, 255}, -- RGB color for vehicle ESP (cyan by default)
-        distance_limit = 100000, -- Maximum distance to render vehicles (100,000 studs covers entire map)
-        icon_size = 6, -- Size in pixels of the small box icon drawn at vehicle position (reduced from 10)
-        box_type = "2D Box", -- Type of box to draw: "2D Box", "3D Chams", or "Corner Box"
+    distance = true, -- Display distance to vehicle in meters
+    color = {100, 255, 255}, -- RGB color for vehicle ESP (cyan by default)
+    distance_limit = 2000, -- Default maximum distance to render vehicles
+    icon_size = 6, -- Size in pixels of the small box icon drawn at vehicle position (reduced from 10)
+    box_type = "Full Box", -- Type of box to draw: "Full Box" or "Corner Box"
         tracer_origin = "Top", -- Where tracers start from: "Top", "Bottom", or "Mouse"
         scan_nested = true, -- Whether to recursively scan for nested vehicle parts (more accurate but slower)
         toggle_key = "[F5]", -- Hotkey to toggle vehicle ESP without opening the UI
@@ -82,6 +81,26 @@ if _G.Config == nil then
 end
 Config = _G.Config
 
+local function clampToRange(value, minValue, maxValue, defaultValue)
+    local numericValue = tonumber(value)
+    if not numericValue then
+        return defaultValue
+    end
+    if numericValue < minValue then
+        return minValue
+    end
+    if numericValue > maxValue then
+        return maxValue
+    end
+    return numericValue
+end
+
+local DistanceSliderBounds = {
+    characters = {min = 50, max = 20000, default = 2000},
+    corpses = {min = 50, max = 20000, default = 2000},
+    vehicles = {min = 100, max = 25000, default = 2000},
+}
+
 -- Ensure newly added configuration entries exist when reloading older configs
 Config.settings.local_player_selection = Config.settings.local_player_selection or "0 - Camera (Default)"
 if Config.settings.show_local_player_indicator == nil then
@@ -93,7 +112,51 @@ Config.vehicles.toggle_key = Config.vehicles.toggle_key or "[F5]"
 if Config.characters.exclude_local_player == nil then
     Config.characters.exclude_local_player = false
 end
+if Config.characters.chams_body_only == nil then
+    Config.characters.chams_body_only = true
+end
 Config.settings.vehicle_scan_step = Config.settings.vehicle_scan_step or 40
+
+Config.characters.distance_limit = clampToRange(
+    Config.characters.distance_limit,
+    DistanceSliderBounds.characters.min,
+    DistanceSliderBounds.characters.max,
+    DistanceSliderBounds.characters.default
+)
+
+Config.corpses.distance_limit = clampToRange(
+    Config.corpses.distance_limit,
+    DistanceSliderBounds.corpses.min,
+    DistanceSliderBounds.corpses.max,
+    DistanceSliderBounds.corpses.default
+)
+
+Config.vehicles.distance_limit = clampToRange(
+    Config.vehicles.distance_limit,
+    DistanceSliderBounds.vehicles.min,
+    DistanceSliderBounds.vehicles.max,
+    DistanceSliderBounds.vehicles.default
+)
+
+local ValidBoxTypes = { ["Full Box"] = true, ["Corner Box"] = true }
+local BoxTypeOptionsList = {"Full Box", "Corner Box"}
+local BoxTypeIndexLookup = { ["Full Box"] = 1, ["Corner Box"] = 2 }
+
+local function NormalizeBoxType(value)
+    if type(value) == "string" then
+        local trimmed = value:gsub("^%s*(.-)%s*$", "%1")
+        if ValidBoxTypes[trimmed] then
+            return trimmed
+        end
+    elseif type(value) == "number" then
+        return BoxTypeOptionsList[value] or "Full Box"
+    end
+    return "Full Box"
+end
+
+Config.characters.box_type = NormalizeBoxType(Config.characters.box_type)
+Config.corpses.box_type = NormalizeBoxType(Config.corpses.box_type)
+Config.vehicles.box_type = NormalizeBoxType(Config.vehicles.box_type)
 
 -- ====================================
 -- GLOBAL CACHE
@@ -149,6 +212,13 @@ _G.AR2_LocalPlayerManager = _G.AR2_LocalPlayerManager or {
 local LocalPlayerManager = _G.AR2_LocalPlayerManager
 LocalPlayerManager.selectedLabel = Config.settings.local_player_selection
 LocalPlayerManager.lastSignatureUpdate = LocalPlayerManager.lastSignatureUpdate or 0
+
+_G.AR2_KnownStarterSignatures = _G.AR2_KnownStarterSignatures or {}
+_G.AR2_KnownSignatureVersion = _G.AR2_KnownSignatureVersion or 0
+_G.AR2_KnownSignatureKey = _G.AR2_KnownSignatureKey or ""
+_G.AR2_StarterPartSets = _G.AR2_StarterPartSets or {}
+_G.AR2_StarterPartSetVersion = _G.AR2_StarterPartSetVersion or 0
+_G.AR2_StarterPartSetKey = _G.AR2_StarterPartSetKey or ""
 
 -- ====================================
 -- HELPER FUNCTIONS
@@ -649,6 +719,171 @@ local function DrawTracer(fromPos, toPos, color)
     Cache.performance.tracers_drawn = Cache.performance.tracers_drawn + 1
 end
 
+local CHARACTER_CACHE_VERSION = 4
+
+local CharacterLimbKeywords = {"head", "torso", "arm", "leg", "hand", "foot"}
+local CharacterFolderHints = {
+    equipment = true,
+    equipped = true,
+    hair = true,
+    pants = true,
+    shirt = true,
+    backpack = true,
+    accessories = true,
+}
+
+local CoreBodyPartNames = {
+    humanoidrootpart = true,
+    humanoidroot = true,
+    root = true,
+    rootpart = true,
+    primarypart = true,
+    torso = true,
+    uppertorso = true,
+    lowertorso = true,
+    chest = true,
+    pelvis = true,
+    spine = true,
+    waist = true,
+}
+
+local function IsCharacterBodyPartName(partName)
+    if not partName then
+        return false
+    end
+
+    local lower = partName:lower()
+
+    if CoreBodyPartNames[lower] then
+        return true
+    end
+
+    if lower:find("torso", 1, true) or lower:find("spine", 1, true) or lower:find("pelvis", 1, true) then
+        return true
+    end
+
+    if lower:find("head", 1, true) or lower:find("neck", 1, true) then
+        return true
+    end
+
+    if lower:find("upperarm", 1, true) or lower:find("lowerarm", 1, true) or lower:find("upperleg", 1, true) or lower:find("lowerleg", 1, true) then
+        return true
+    end
+
+    local hasSideQualifier = lower:find("left", 1, true) or lower:find("right", 1, true)
+    if hasSideQualifier then
+        if lower:find("arm", 1, true) or lower:find("hand", 1, true) or lower:find("leg", 1, true) or lower:find("foot", 1, true) or lower:find("thigh", 1, true) or lower:find("calf", 1, true) or lower:find("knee", 1, true) or lower:find("shoulder", 1, true) or lower:find("hip", 1, true) then
+            return true
+        end
+    end
+
+    if lower:find("hip", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function AnalyzeCharacterModel(model)
+    local analysis = {
+        parts = {},
+        children = nil,
+        partCount = 0,
+        limbScore = 0,
+        hasHumanoid = false,
+        humanoid = nil,
+        humanoidRootPart = nil,
+        headPart = nil,
+        hasAnimator = false,
+        accessoryCount = 0,
+        appearanceCount = 0,
+        folderHits = 0,
+    }
+
+    local children = dx9.GetChildren(model)
+    analysis.children = children
+    if not (children and #children > 0) then
+        return analysis
+    end
+
+    local stack = {}
+    local visited = {}
+    for i = 1, #children do
+        stack[#stack + 1] = {children[i], 1}
+    end
+
+    local maxDepth = 4
+
+    while #stack > 0 do
+        local entry = stack[#stack]
+        stack[#stack] = nil
+
+        local instance = entry[1]
+        if not visited[instance] then
+            visited[instance] = true
+            local depth = entry[2]
+
+            local successType, instanceType = pcall(dx9.GetType, instance)
+            if successType and instanceType then
+                if instanceType == "Humanoid" then
+                    analysis.hasHumanoid = true
+                    analysis.humanoid = instance
+                elseif instanceType == "Animator" or instanceType == "AnimationController" then
+                    analysis.hasAnimator = true
+                elseif instanceType == "Accessory" then
+                    analysis.accessoryCount = analysis.accessoryCount + 1
+                elseif instanceType == "Shirt" or instanceType == "Pants" or instanceType == "ShirtGraphic" then
+                    analysis.appearanceCount = analysis.appearanceCount + 1
+                end
+
+                if instanceType == "Part" or instanceType == "MeshPart" then
+                    analysis.partCount = analysis.partCount + 1
+                    analysis.parts[analysis.partCount] = instance
+
+                    local successName, instanceName = pcall(dx9.GetName, instance)
+                    if successName and instanceName then
+                        local lower = instanceName:lower()
+
+                        if not analysis.headPart and lower:find("head") then
+                            analysis.headPart = instance
+                        end
+
+                        if lower:find("humanoidrootpart") then
+                            analysis.humanoidRootPart = instance
+                        end
+
+                        for _, keyword in ipairs(CharacterLimbKeywords) do
+                            if lower:find(keyword) then
+                                analysis.limbScore = analysis.limbScore + 1
+                                break
+                            end
+                        end
+                    end
+                elseif (instanceType == "Model" or instanceType == "Folder") and depth < maxDepth then
+                    local successChildren, subChildren = pcall(dx9.GetChildren, instance)
+                    if successChildren and subChildren and #subChildren > 0 then
+                        if instanceType == "Folder" then
+                            local successName, folderName = pcall(dx9.GetName, instance)
+                            if successName and folderName then
+                                local hintKey = folderName:lower()
+                                if CharacterFolderHints[hintKey] then
+                                    analysis.folderHits = analysis.folderHits + 1
+                                end
+                            end
+                        end
+
+                        for j = 1, #subChildren do
+                            stack[#stack + 1] = {subChildren[j], depth + 1}
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return analysis
+end
+
 -- OPTIMIZED: Improved character model validation with better caching
 -- FURTHER OPTIMIZED: Reduced redundant checks and improved early exits
 local function IsCharacterModel(model, modelAddress)
@@ -658,47 +893,103 @@ local function IsCharacterModel(model, modelAddress)
             Cache.characters[modelAddress] = nil
             return false, 0
         end
-        return cached.isCharacter, cached.partCount
+        local currentTemplateVersion = _G.AR2_StarterPartSetVersion or 0
+        if cached.version == CHARACTER_CACHE_VERSION and cached.parts and cached.templateVersion == currentTemplateVersion then
+            return cached.isCharacter, cached.partCount
+        end
     end
-    
-    local children = dx9.GetChildren(model)
-    if not (children and #children > 0) then
-        return false, 0
-    end
-    
-    local partCount = 0
-    local hasHumanoid = false
-    local humanoidRootPart = nil
-    
-    for i = 1, #children do
-        local child = children[i]
-        local success, childType = pcall(dx9.GetType, child)
-        
-        if success then
-            if childType == "Humanoid" then
-                hasHumanoid = true
-            elseif childType == "Part" or childType == "MeshPart" then
-                partCount = partCount + 1
-                
-                local success2, childName = pcall(dx9.GetName, child)
-                
-                if success2 and childName == "HumanoidRootPart" then
-                    humanoidRootPart = child
+
+    local analysis = AnalyzeCharacterModel(model)
+    local partCount = analysis.partCount
+    local hasHumanoid = analysis.hasHumanoid
+    local humanoidRootPart = analysis.humanoidRootPart
+    local limbScore = analysis.limbScore
+
+    local candidatePartNames = {}
+    local bodyParts = {}
+    local bodyPartLookup = {}
+    local bodyPartCount = 0
+    if analysis.parts then
+        for i = 1, partCount do
+            local part = analysis.parts[i]
+            if part then
+                local successPartName, partName = pcall(dx9.GetName, part)
+                if successPartName and partName then
+                    local lowerName = partName:lower()
+                    candidatePartNames[lowerName] = true
+
+                    if IsCharacterBodyPartName(partName) then
+                        bodyPartCount = bodyPartCount + 1
+                        bodyParts[bodyPartCount] = part
+                        bodyPartLookup[part] = true
+                    end
                 end
             end
         end
     end
-    
-    local isCharacter = hasHumanoid and partCount >= Config.characters.min_limb_count
-    
+
+    local starterPartSets = _G.AR2_StarterPartSets or {}
+    local matchesStarterTemplate = false
+
+    if starterPartSets and #starterPartSets > 0 then
+        for _, requiredSet in ipairs(starterPartSets) do
+            local requiredMatch = true
+            for requiredName in pairs(requiredSet) do
+                if not candidatePartNames[requiredName] then
+                    requiredMatch = false
+                    break
+                end
+            end
+            if requiredMatch then
+                matchesStarterTemplate = true
+                break
+            end
+        end
+    else
+        matchesStarterTemplate = true
+    end
+
+    local minLimbs = Config.characters.min_limb_count or 3
+    local extendedThreshold = math.max(minLimbs, 6)
+
+    local isCharacter = false
+    if hasHumanoid and partCount >= minLimbs then
+        isCharacter = true
+    elseif hasHumanoid and limbScore >= 4 and partCount >= extendedThreshold then
+        isCharacter = true
+    elseif hasHumanoid and humanoidRootPart and analysis.hasAnimator and limbScore >= 3 and partCount >= extendedThreshold then
+        isCharacter = true
+    elseif hasHumanoid and partCount >= extendedThreshold and (analysis.accessoryCount + analysis.appearanceCount + analysis.folderHits) >= 2 then
+        isCharacter = true
+    end
+
+    if not matchesStarterTemplate then
+        isCharacter = false
+    end
+
+    local cachedBodyParts = bodyPartCount > 0 and bodyParts or nil
+    local cachedBodyLookup = bodyPartCount > 0 and bodyPartLookup or nil
+
     Cache.characters[modelAddress] = {
         isCharacter = isCharacter,
         partCount = partCount,
-        children = children,
+        children = analysis.children or {},
+        parts = analysis.parts,
+        bodyParts = cachedBodyParts,
+        bodyPartLookup = cachedBodyLookup,
         humanoidRootPart = humanoidRootPart,
-        lastSeen = Cache.frame_count
+        headPart = analysis.headPart,
+        hasHumanoid = hasHumanoid,
+        limbScore = limbScore,
+        accessoryCount = analysis.accessoryCount,
+        appearanceCount = analysis.appearanceCount,
+        folderHits = analysis.folderHits,
+        hasAnimator = analysis.hasAnimator,
+        lastSeen = Cache.frame_count,
+        templateVersion = _G.AR2_StarterPartSetVersion or 0,
+        version = CHARACTER_CACHE_VERSION,
     }
-    
+
     return isCharacter, partCount
 end
 
@@ -841,20 +1132,38 @@ end
 
 -- OPTIMIZED: Get head position with better performance
 -- FURTHER OPTIMIZED: Early exit and reduced string operations
-local function GetHeadPosition(children)
-    if not children then return nil end
+local function GetHeadPosition(children, depth)
+    if not (children and #children > 0) then
+        return nil
+    end
+
+    depth = depth or 1
+    local maxDepth = 4
+
     for i = 1, #children do
         local child = children[i]
         local success, childType = pcall(dx9.GetType, child)
         
-        if success and (childType == "Part" or childType == "MeshPart") then
-            local success2, partName = pcall(dx9.GetName, child)
-            
-            if success2 and partName and partName:lower():find("head") then
-                local success3, pos = pcall(dx9.GetPosition, child)
+        if success then
+            if childType == "Part" or childType == "MeshPart" then
+                local success2, partName = pcall(dx9.GetName, child)
                 
-                if success3 and pos then
-                    return pos
+                if success2 and partName then
+                    local lower = partName:lower()
+                    if lower:find("head") or lower:find("helmet") then
+                        local success3, pos = pcall(dx9.GetPosition, child)
+                        if success3 and pos then
+                            return pos
+                        end
+                    end
+                end
+            elseif (childType == "Model" or childType == "Folder") and depth < maxDepth then
+                local successChildren, subChildren = pcall(dx9.GetChildren, child)
+                if successChildren and subChildren then
+                    local nested = GetHeadPosition(subChildren, depth + 1)
+                    if nested then
+                        return nested
+                    end
                 end
             end
         end
@@ -869,21 +1178,89 @@ local function GetAllVisibleParts(children)
     if not (children and #children > 0) then
         return {}
     end
-    
+
     local parts = {}
     local count = 0
-    
+    local stack = {}
+    local visited = {}
+    local maxDepth = 4
+
     for i = 1, #children do
-        local child = children[i]
-        local success, childType = pcall(dx9.GetType, child)
-        
-        if success and (childType == "Part" or childType == "MeshPart") then
-            count = count + 1
-            parts[count] = child
+        stack[#stack + 1] = {children[i], 1}
+    end
+
+    while #stack > 0 do
+        local entry = stack[#stack]
+        stack[#stack] = nil
+
+        local instance = entry[1]
+        if not visited[instance] then
+            visited[instance] = true
+            local depth = entry[2]
+
+            local success, instanceType = pcall(dx9.GetType, instance)
+            if success then
+                if instanceType == "Part" or instanceType == "MeshPart" then
+                    count = count + 1
+                    parts[count] = instance
+                elseif (instanceType == "Model" or instanceType == "Folder") and depth < maxDepth then
+                    local successChildren, subChildren = pcall(dx9.GetChildren, instance)
+                    if successChildren and subChildren and #subChildren > 0 then
+                        for j = 1, #subChildren do
+                            stack[#stack + 1] = {subChildren[j], depth + 1}
+                        end
+                    end
+                end
+            end
         end
     end
-    
+
     return parts
+end
+
+local function BuildPartNameSet(children)
+    local names = {}
+    if not (children and #children > 0) then
+        return names
+    end
+
+    local stack = {}
+    local visited = {}
+    local maxDepth = 4
+
+    for i = 1, #children do
+        stack[#stack + 1] = {children[i], 1}
+    end
+
+    while #stack > 0 do
+        local entry = stack[#stack]
+        stack[#stack] = nil
+
+        local instance = entry[1]
+        if not visited[instance] then
+            visited[instance] = true
+            local depth = entry[2]
+
+            local successType, instanceType = pcall(dx9.GetType, instance)
+            if successType then
+                if instanceType == "Part" or instanceType == "MeshPart" then
+                    local successName, partName = pcall(dx9.GetName, instance)
+                    if successName and partName then
+                        names[partName:lower()] = true
+                    end
+                elseif (instanceType == "Model" or instanceType == "Folder") and depth < maxDepth then
+                    local successChildren, subChildren = pcall(dx9.GetChildren, instance)
+                    if successChildren and subChildren and #subChildren > 0 then
+                        for j = 1, #subChildren do
+                            stack[#stack + 1] = {subChildren[j], depth + 1}
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return names
 end
 
 local function CollectNamesForSignature(instance, list, depth, maxDepth)
@@ -980,6 +1357,8 @@ local function EnsureStarterCharacterEntry(model)
             lastSeen = Cache.frame_count,
             signatureHash = nil,
             lastSignatureFrame = 0,
+            partNameSet = nil,
+            partNameCount = 0,
         }
         Cache.starter_characters[model] = entry
     else
@@ -988,6 +1367,12 @@ local function EnsureStarterCharacterEntry(model)
     end
 
     UpdateStarterCharacterSignature(entry, model)
+
+    entry.partNameSet = BuildPartNameSet(entry.children)
+    entry.partNameCount = 0
+    for _ in pairs(entry.partNameSet) do
+        entry.partNameCount = entry.partNameCount + 1
+    end
 
     return entry
 end
@@ -1122,6 +1507,49 @@ local function UpdateStarterCharacterOptions(starterFolder, charactersFolder)
         LocalPlayerManager.lastSelectedModel = nil
         LocalPlayerManager.selectedSignature = nil
         LocalPlayerManager.lastSignatureUpdate = 0
+    end
+
+    local signatureSet = {}
+    for model, entry in pairs(Cache.starter_characters) do
+        local signature = entry and (entry.signatureHash or UpdateStarterCharacterSignature(entry, model))
+        if signature then
+            signatureSet[signature] = true
+        end
+    end
+
+    local signatureList = {}
+    for signature in pairs(signatureSet) do
+        signatureList[#signatureList + 1] = signature
+    end
+    table.sort(signatureList)
+    local signatureKey = table.concat(signatureList, "|")
+
+    _G.AR2_KnownStarterSignatures = signatureSet
+    if signatureKey ~= _G.AR2_KnownSignatureKey then
+        _G.AR2_KnownSignatureKey = signatureKey
+        _G.AR2_KnownSignatureVersion = (_G.AR2_KnownSignatureVersion or 0) + 1
+    end
+
+    local starterPartSets = {}
+    local partSetStrings = {}
+    for model, entry in pairs(Cache.starter_characters) do
+        if entry and entry.partNameSet then
+            starterPartSets[#starterPartSets + 1] = entry.partNameSet
+            local names = {}
+            for partName in pairs(entry.partNameSet) do
+                names[#names + 1] = partName
+            end
+            table.sort(names)
+            partSetStrings[#partSetStrings + 1] = table.concat(names, ",")
+        end
+    end
+    table.sort(partSetStrings)
+    local partSetKey = table.concat(partSetStrings, "|")
+
+    _G.AR2_StarterPartSets = starterPartSets
+    if partSetKey ~= _G.AR2_StarterPartSetKey then
+        _G.AR2_StarterPartSetKey = partSetKey
+        _G.AR2_StarterPartSetVersion = (_G.AR2_StarterPartSetVersion or 0) + 1
     end
 
     if LocalPlayerManager.dropdown then
@@ -1399,7 +1827,10 @@ local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, 
         return false
     end
     
-    local children = cachedData.children
+    local partSources = cachedData.parts
+    if not (partSources and #partSources > 0) then
+        partSources = cachedData.children
+    end
     
     local referencePos = GetReferencePosition(entityData.model, entityData.model, cacheTable)
     if not referencePos then
@@ -1414,52 +1845,71 @@ local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, 
     end
     local distance = math.sqrt(distanceSquared)  -- Only calculate actual distance if needed for display
     
-    local visibleParts = GetAllVisibleParts(children)
+    local visibleParts = GetAllVisibleParts(partSources)
     if not (#visibleParts > 0) then
         return false
     end
     
     local anyPartVisible = false
     local headPos = nil
-    local healthInfo = nil
     local currentColor = config.color
-    
-    if not isCorpse and config.health then
-        for _, child in next, children do
-            local success, childType = pcall(function()
-                return dx9.GetType(child)
-            end)
-            
-            if success and childType == "Humanoid" then
-                local hp = dx9.GetHealth(child)
-                local maxHp = dx9.GetMaxHealth(child)
-                if hp and maxHp then
-                    healthInfo = {current = math.floor(hp), max = math.floor(maxHp)}
-                end
-                break
-            end
+
+    if cachedData.headPart then
+        local successHead, headWorld = pcall(dx9.GetPosition, cachedData.headPart)
+        if successHead and headWorld and headWorld.x then
+            headPos = headWorld
         end
     end
     
-    if config.boxes and config.box_type ~= "3D Chams" then
+    if config.boxes then
         -- Use statistical outlier filtering for all characters
         local boundingBox = GetBoundingBox(visibleParts, screenWidth, screenHeight, Config.settings.screen_padding)
         
         if boundingBox then
             anyPartVisible = true
             
-            if config.box_type == "2D Box" then
-                Draw2DBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
-            elseif config.box_type == "Corner Box" then
+            if config.box_type == "Corner Box" then
                 DrawCornerBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
+            else
+                Draw2DBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
             end
             
             Cache.performance.boxes_drawn = Cache.performance.boxes_drawn + 1
         end
     end
     
-    if config.chams or (config.boxes and config.box_type == "3D Chams") then
-        for _, part in next, visibleParts do
+    if config.chams then
+        local chamParts = visibleParts
+
+        if config.chams_body_only and not isCorpse then
+            local filtered = {}
+            local lookup = cachedData.bodyPartLookup
+
+            if lookup then
+                for i = 1, #visibleParts do
+                    local part = visibleParts[i]
+                    if lookup[part] then
+                        filtered[#filtered + 1] = part
+                    end
+                end
+            else
+                for i = 1, #visibleParts do
+                    local part = visibleParts[i]
+                    local successName, partName = pcall(function()
+                        return dx9.GetName(part)
+                    end)
+                    if successName and partName and IsCharacterBodyPartName(partName) then
+                        filtered[#filtered + 1] = part
+                    end
+                end
+            end
+
+            if #filtered > 0 then
+                chamParts = filtered
+            end
+        end
+
+        for _, part in next, chamParts do
             local success, partPos = pcall(function()
                 return dx9.GetPosition(part)
             end)
@@ -1502,7 +1952,7 @@ local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, 
     
     if config.head_dot then
         if not headPos then
-            headPos = GetHeadPosition(children)
+            headPos = GetHeadPosition(partSources)
         end
         
         if headPos then
@@ -1538,7 +1988,7 @@ local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, 
         end
     end
     
-    if anyPartVisible and (config.names or config.distance or (config.health and healthInfo)) then
+    if anyPartVisible and (config.names or config.distance) then
         local labelPos = headPos or referencePos
         if labelPos then
             local screenPos = dx9.WorldToScreen({labelPos.x, labelPos.y + 2, labelPos.z})
@@ -1549,14 +1999,6 @@ local function RenderEntityESP(entityData, config, distanceOrigin, screenWidth, 
                 if config.names then
                     local modelName = dx9.GetName(entityData.model)
                     nameText = modelName or (isCorpse and "Corpse" or "Character")
-                end
-                
-                if config.health and healthInfo and not isCorpse then
-                    if nameText ~= "" then
-                        nameText = nameText .. " | " .. healthInfo.current .. "/" .. healthInfo.max
-                    else
-                        nameText = healthInfo.current .. "/" .. healthInfo.max
-                    end
                 end
                 
                 if config.distance then
@@ -1661,6 +2103,13 @@ CharGroupboxes.main:AddToggle({
 end)
 
 CharGroupboxes.main:AddToggle({
+    Default = Config.characters.chams_body_only,
+    Text = "Chams: Body Only",
+}):OnChanged(function(value)
+    Config.characters.chams_body_only = value
+end)
+
+CharGroupboxes.main:AddToggle({
     Default = Config.characters.boxes,
     Text = "Boxes",
 }):OnChanged(function(value)
@@ -1695,13 +2144,6 @@ CharGroupboxes.visual:AddToggle({
     Config.characters.distance = value
 end)
 
-CharGroupboxes.visual:AddToggle({
-    Default = Config.characters.health,
-    Text = "Health",
-}):OnChanged(function(value)
-    Config.characters.health = value
-end)
-
 CharGroupboxes.visual:AddColorPicker({
     Default = Config.characters.color,
     Text = "Color",
@@ -1712,11 +2154,17 @@ end)
 CharGroupboxes.visual:AddSlider({
     Default = Config.characters.distance_limit,
     Text = "Max Distance",
-    Min = 50,
-    Max = 100000,
+    Min = DistanceSliderBounds.characters.min,
+    Max = DistanceSliderBounds.characters.max,
     Rounding = 0,
+    Suffix = " studs",
 }):OnChanged(function(value)
-    Config.characters.distance_limit = value
+    Config.characters.distance_limit = clampToRange(
+        value,
+        DistanceSliderBounds.characters.min,
+        DistanceSliderBounds.characters.max,
+        DistanceSliderBounds.characters.default
+    )
 end)
 
 CharGroupboxes.visual:AddSlider({
@@ -1729,12 +2177,13 @@ CharGroupboxes.visual:AddSlider({
     Config.characters.min_limb_count = value
 end)
 
+local characterBoxOptions = {BoxTypeOptionsList[1], BoxTypeOptionsList[2]}
 CharGroupboxes.extra:AddDropdown({
-    Default = 1,
+    Default = BoxTypeIndexLookup[Config.characters.box_type] or 1,
     Text = "Box Type",
-    Values = {"2D Box", "3D Chams", "Corner Box"},
+    Values = characterBoxOptions,
 }):OnChanged(function(value)
-    Config.characters.box_type = value
+    Config.characters.box_type = NormalizeBoxType(value)
 end)
 
 CharGroupboxes.extra:AddDropdown({
@@ -1818,11 +2267,17 @@ end)
 CorpseGroupboxes.visual:AddSlider({
     Default = Config.corpses.distance_limit,
     Text = "Max Distance",
-    Min = 50,
-    Max = 100000,
+    Min = DistanceSliderBounds.corpses.min,
+    Max = DistanceSliderBounds.corpses.max,
     Rounding = 0,
+    Suffix = " studs",
 }):OnChanged(function(value)
-    Config.corpses.distance_limit = value
+    Config.corpses.distance_limit = clampToRange(
+        value,
+        DistanceSliderBounds.corpses.min,
+        DistanceSliderBounds.corpses.max,
+        DistanceSliderBounds.corpses.default
+    )
 end)
 
 CorpseGroupboxes.visual:AddSlider({
@@ -1835,12 +2290,13 @@ CorpseGroupboxes.visual:AddSlider({
     Config.corpses.min_limb_count = value
 end)
 
+local corpseBoxOptions = {BoxTypeOptionsList[1], BoxTypeOptionsList[2]}
 CorpseGroupboxes.extra:AddDropdown({
-    Default = 1,
+    Default = BoxTypeIndexLookup[Config.corpses.box_type] or 1,
     Text = "Box Type",
-    Values = {"2D Box", "3D Chams", "Corner Box"},
+    Values = corpseBoxOptions,
 }):OnChanged(function(value)
-    Config.corpses.box_type = value
+    Config.corpses.box_type = NormalizeBoxType(value)
 end)
 
 CorpseGroupboxes.extra:AddDropdown({
@@ -1917,11 +2373,17 @@ end)
 VehicleGroupboxes.visual:AddSlider({
     Default = Config.vehicles.distance_limit,
     Text = "Max Distance",
-    Min = 100,
-    Max = 100000,
+    Min = DistanceSliderBounds.vehicles.min,
+    Max = DistanceSliderBounds.vehicles.max,
     Rounding = 0,
+    Suffix = " studs",
 }):OnChanged(function(value)
-    Config.vehicles.distance_limit = value
+    Config.vehicles.distance_limit = clampToRange(
+        value,
+        DistanceSliderBounds.vehicles.min,
+        DistanceSliderBounds.vehicles.max,
+        DistanceSliderBounds.vehicles.default
+    )
 end)
 
 VehicleGroupboxes.visual:AddSlider({
@@ -1934,12 +2396,13 @@ VehicleGroupboxes.visual:AddSlider({
     Config.vehicles.icon_size = value
 end)
 
+local vehicleBoxOptions = {BoxTypeOptionsList[1], BoxTypeOptionsList[2]}
 VehicleGroupboxes.extra:AddDropdown({
-    Default = 1,
+    Default = BoxTypeIndexLookup[Config.vehicles.box_type] or 1,
     Text = "Box Type",
-    Values = {"2D Box", "3D Chams", "Corner Box"},
+    Values = vehicleBoxOptions,
 }):OnChanged(function(value)
-    Config.vehicles.box_type = value
+    Config.vehicles.box_type = NormalizeBoxType(value)
 end)
 
 VehicleGroupboxes.extra:AddDropdown({
@@ -2520,16 +2983,16 @@ if Config.vehicles.enabled and Cache.vehicle_list and #Cache.vehicle_list > 0 th
                 local currentColor = Config.vehicles.color
                 
                 -- Draw 2D bounding box around entire vehicle if enabled
-                if Config.vehicles.boxes and Config.vehicles.box_type ~= "3D Chams" then
+                if Config.vehicles.boxes then
                     local boundingBox = GetBoundingBox(allParts, screenWidth, screenHeight, Config.settings.screen_padding)
                     
                     if boundingBox then
                         anyPartVisible = true
                         
-                        if Config.vehicles.box_type == "2D Box" then
-                            Draw2DBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
-                        elseif Config.vehicles.box_type == "Corner Box" then
+                        if Config.vehicles.box_type == "Corner Box" then
                             DrawCornerBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
+                        else
+                            Draw2DBox(boundingBox.topLeft, boundingBox.bottomRight, currentColor)
                         end
                         
                         Cache.performance.boxes_drawn = Cache.performance.boxes_drawn + 1
@@ -2537,7 +3000,7 @@ if Config.vehicles.enabled and Cache.vehicle_list and #Cache.vehicle_list > 0 th
                 end
                 
                 -- Draw 3D chams around individual vehicle parts if enabled
-                if Config.vehicles.chams or (Config.vehicles.boxes and Config.vehicles.box_type == "3D Chams") then
+                if Config.vehicles.chams then
                     local maxPartsToRender = 30 -- Limit parts per vehicle to prevent FPS drops
                     local partsRendered = 0
                     
