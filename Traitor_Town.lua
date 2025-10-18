@@ -28,6 +28,7 @@ Config = _G.Config or {
         min_limb_count = 3,
         box_type = "2D Box",
         tracer_origin = "Mouse",
+        toggle_key = "[F3]",
     },
     corpses = {
         enabled = true,
@@ -42,6 +43,7 @@ Config = _G.Config or {
         min_limb_count = 3,
         box_type = "2D Box",
         tracer_origin = "Bottom",
+        toggle_key = "[F4]",
     },
     items = {
         enabled = true,
@@ -55,6 +57,7 @@ Config = _G.Config or {
         icon_size = 6,
         box_type = "2D Box",
         tracer_origin = "Bottom",
+        toggle_key = "[F5]",
         filter_weapons = false,
         filter_ammo = false,
         filter_attachments = false,
@@ -74,6 +77,10 @@ if _G.Config == nil then
     _G.Config = Config
 end
 Config = _G.Config
+
+Config.players.toggle_key = Config.players.toggle_key or "[F3]"
+Config.corpses.toggle_key = Config.corpses.toggle_key or "[F4]"
+Config.items.toggle_key = Config.items.toggle_key or "[F5]"
 
 -- ====================================
 -- GLOBAL CACHE
@@ -1522,14 +1529,31 @@ local SettingsGroupboxes = {
     debug = Tabs.settings:AddRightGroupbox("Debug"),
 }
 
+local function FormatHotkeyLabel(label, key)
+    local displayKey = key and key ~= "" and key or "[None]"
+    return string.format("%s: %s", label, displayKey)
+end
+
 -- Player Settings
-PlayerGroupboxes.main:AddToggle({
+local PlayerEnabledToggle = PlayerGroupboxes.main:AddToggle({
     Default = Config.players.enabled,
     Text = "Enabled",
-}):OnChanged(function(value)
+})
+PlayerEnabledToggle:OnChanged(function(value)
     Lib:Notify(value and "Player ESP Enabled" or "Player ESP Disabled", 1)
     Config.players.enabled = value
 end)
+
+local PlayerHotkeyButton = PlayerGroupboxes.main:AddKeybindButton({
+    Text = FormatHotkeyLabel("Player ESP Hotkey", Config.players.toggle_key),
+    Default = Config.players.toggle_key,
+})
+PlayerEnabledToggle:ConnectKeybindButton(PlayerHotkeyButton)
+PlayerHotkeyButton:OnChanged(function(key)
+    Config.players.toggle_key = key
+    PlayerHotkeyButton:SetText(FormatHotkeyLabel("Player ESP Hotkey", key))
+end)
+PlayerHotkeyButton:SetText(FormatHotkeyLabel("Player ESP Hotkey", Config.players.toggle_key))
 
 PlayerGroupboxes.main:AddToggle({
     Default = Config.players.chams,
@@ -1624,13 +1648,25 @@ PlayerGroupboxes.extra:AddDropdown({
 end)
 
 -- Corpse Settings
-CorpseGroupboxes.main:AddToggle({
+local CorpseEnabledToggle = CorpseGroupboxes.main:AddToggle({
     Default = Config.corpses.enabled,
     Text = "Enabled",
-}):OnChanged(function(value)
+})
+CorpseEnabledToggle:OnChanged(function(value)
     Lib:Notify(value and "Corpse ESP Enabled" or "Corpse ESP Disabled", 1)
     Config.corpses.enabled = value
 end)
+
+local CorpseHotkeyButton = CorpseGroupboxes.main:AddKeybindButton({
+    Text = FormatHotkeyLabel("Corpse ESP Hotkey", Config.corpses.toggle_key),
+    Default = Config.corpses.toggle_key,
+})
+CorpseEnabledToggle:ConnectKeybindButton(CorpseHotkeyButton)
+CorpseHotkeyButton:OnChanged(function(key)
+    Config.corpses.toggle_key = key
+    CorpseHotkeyButton:SetText(FormatHotkeyLabel("Corpse ESP Hotkey", key))
+end)
+CorpseHotkeyButton:SetText(FormatHotkeyLabel("Corpse ESP Hotkey", Config.corpses.toggle_key))
 
 CorpseGroupboxes.main:AddToggle({
     Default = Config.corpses.chams,
@@ -1718,13 +1754,25 @@ CorpseGroupboxes.extra:AddDropdown({
 end)
 
 -- Item Settings
-ItemGroupboxes.main:AddToggle({
+local ItemEnabledToggle = ItemGroupboxes.main:AddToggle({
     Default = Config.items.enabled,
     Text = "Enabled",
-}):OnChanged(function(value)
+})
+ItemEnabledToggle:OnChanged(function(value)
     Lib:Notify(value and "Item ESP Enabled" or "Item ESP Disabled", 1)
     Config.items.enabled = value
 end)
+
+local ItemHotkeyButton = ItemGroupboxes.main:AddKeybindButton({
+    Text = FormatHotkeyLabel("Item ESP Hotkey", Config.items.toggle_key),
+    Default = Config.items.toggle_key,
+})
+ItemEnabledToggle:ConnectKeybindButton(ItemHotkeyButton)
+ItemHotkeyButton:OnChanged(function(key)
+    Config.items.toggle_key = key
+    ItemHotkeyButton:SetText(FormatHotkeyLabel("Item ESP Hotkey", key))
+end)
+ItemHotkeyButton:SetText(FormatHotkeyLabel("Item ESP Hotkey", Config.items.toggle_key))
 
 ItemGroupboxes.main:AddToggle({
     Default = Config.items.chams,
